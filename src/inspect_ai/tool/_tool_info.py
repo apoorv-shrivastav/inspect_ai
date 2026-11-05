@@ -9,6 +9,7 @@ from typing import (
 
 from docstring_parser import Docstring, parse
 from pydantic import BaseModel, Field
+from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from inspect_ai.util._json import JSONType, json_schema
 
@@ -163,7 +164,7 @@ def _parse_tool_info_shared(func: Callable[..., Any]) -> ToolInfo:
         if param.default is param.empty:
             info.parameters.required.append(param_name)
         else:
-            tool_param.default = param.default
+            tool_param.default = _jsonable_default(param.default)
 
         # Add description from docstring
         if "description" in docstring_info:
@@ -228,3 +229,15 @@ def python_type_to_json_type(python_type: str) -> JSONType | None:
             return "null"
         case _:
             return None
+
+
+def _jsonable_default(default: Any) -> Any:
+    """Convert a parameter default to its JSON form (e.g. an `Enum` member to its value).
+
+    Tool schemas are sent to models with `json.dumps`, which can't serialize values
+    such as `Enum` members. Defaults pydantic can't serialize are left as they are.
+    """
+    try:
+        return to_jsonable_python(default)
+    except PydanticSerializationError:
+        return default

@@ -577,3 +577,36 @@ def test_parse_tool_info_shared_returns_cached_object() -> None:
 
     assert detached1 is not detached2
     assert detached1 == detached2
+
+
+def test_enum_default_is_json_serializable() -> None:
+    import json
+
+    from inspect_ai.util._json import json_schema_dump
+
+    class Unit(Enum):
+        CELSIUS = "celsius"
+        FAHRENHEIT = "fahrenheit"
+
+    class Level(int, Enum):
+        LOW = 1
+        HIGH = 2
+
+    def weather(
+        city: str, unit: Unit = Unit.CELSIUS, levels: list[Level] = [Level.LOW]
+    ) -> str:
+        """Get the temperature for a city.
+
+        Args:
+            city: City name.
+            unit: Temperature unit.
+            levels: Detail levels.
+        """
+        return city
+
+    info = parse_tool_info(weather)
+    assert info.parameters.properties["unit"].default == "celsius"
+    assert info.parameters.properties["levels"].default == [1]
+    dumped = json.loads(json.dumps(json_schema_dump(info.parameters)))
+    assert dumped["properties"]["unit"]["default"] == "celsius"
+    assert dumped["properties"]["levels"]["default"] == [1]
