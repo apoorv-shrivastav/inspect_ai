@@ -345,6 +345,40 @@ async def test_numeric_match_with_punctuation(model_output: str):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "model_output",
+    [
+        "The answer is 42。",
+        "The answer is 42！",
+        "The answer is 42？",
+        "The answer is 42：",
+        "The answer is （42）",
+        "The answer is ［42］",
+        "The answer is ＂42＂",
+        "答え: 42。",
+    ],
+)
+async def test_numeric_match_with_fullwidth_punctuation(model_output: str):
+    scorer = match(numeric=True)
+    state = simple_task_state(model_output=model_output)
+    result = await scorer(state, Target(["42"]))
+
+    assert result is not None
+    assert result.text == CORRECT
+    assert result.answer == "42"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("model_output", ["～42", "＜42", "＞42"])
+async def test_numeric_match_keeps_fullwidth_operators(model_output: str):
+    scorer = match(numeric=True)
+    result = await scorer(simple_task_state(model_output=model_output), Target(["42"]))
+
+    assert result is not None
+    assert result.text == INCORRECT
+
+
+@pytest.mark.anyio
 async def test_numeric_match_any_with_punctuation():
     scorer = match(numeric=True, location="any")
     state = simple_task_state(model_output="The total is (42)!")

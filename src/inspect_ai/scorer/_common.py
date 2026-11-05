@@ -131,8 +131,9 @@ def match_str(
 # Sentence/enclosing punctuation only. Operator characters (~ < > = etc.)
 # are deliberately excluded: "<42", ">=42", "~42" express bounds or
 # approximations, not the value itself, and trimming them would grade a
-# hedge as the exact answer (false CORRECTs).
-_NUMERIC_PUNCTUATION_TRIM = "!?:;()[]{}'\"`"
+# hedge as the exact answer (false CORRECTs). The full-width forms and the
+# ideographic full stop cover CJK output ("42。", "（42）").
+_NUMERIC_PUNCTUATION_TRIM = "!?:;()[]{}'\"`！？：；（）［］｛｝＇＂｀。"
 
 
 def _clean_numeric_word(s: str) -> str:
