@@ -23,6 +23,7 @@ from inspect_ai._util.hash import mm3_hash
 from inspect_ai._util.platform import running_in_notebook
 from inspect_ai.analysis._dataframe.progress import import_progress, no_progress
 from inspect_ai.event._event import Event
+from inspect_ai.log._condense import resolve_sample_attachments
 from inspect_ai.log._file import (
     read_eval_log_async,
     read_eval_log_sample_summaries_async,
@@ -329,7 +330,14 @@ def _read_samples_df_serial(
                 and eval_log.samples is not None
                 and len(eval_log.samples) > 0
             ):
-                samples: Iterable[EvalSample | EvalSampleSummary] = eval_log.samples
+                samples: Iterable[EvalSample | EvalSampleSummary] = (
+                    [
+                        resolve_sample_attachments(sample, True)
+                        for sample in eval_log.samples
+                    ]
+                    if require_full_samples
+                    else eval_log.samples
+                )
             elif require_full_samples:
                 full_log = await read_eval_log_async(
                     eval_log.location,

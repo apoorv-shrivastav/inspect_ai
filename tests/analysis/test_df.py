@@ -780,3 +780,35 @@ def test_message_render_cache_does_not_outlive_its_scope():
     message.content = "after"
     with message_render_cache():
         assert messages_as_str([message]) == "user:\nafter\n"
+
+
+def test_messages_and_events_df_resolve_attachments_for_eval_logs(
+    tmp_path: Path,
+) -> None:
+    text = " ".join(["attachment content"] * 100)
+    [log] = eval(
+        Task(dataset=[Sample(input=text)]),
+        model="mockllm/model",
+        display="none",
+        log_dir=str(tmp_path),
+    )
+    columns = EventInfo + ModelEventColumns
+
+    def model_event_values(logs: str | EvalLog) -> list[str]:
+        df = events_df(
+            logs, columns=columns, filter=lambda e: e.event == "model", quiet=True
+        )
+        return [df["model_event_input"].iloc[0], df["model_event_call"].iloc[0]]
+
+    expected_content = messages_df(log.location, quiet=True)["content"].iloc[0]
+    expected_events = model_event_values(log.location)
+    assert expected_content.startswith("attachment content")
+
+    for eval_log in [log, read_eval_log(log.location)]:
+        assert eval_log.samples
+        attachments_before = dict(eval_log.samples[0].attachments)
+        content = messages_df(eval_log, quiet=True)["content"].iloc[0]
+        assert content == expected_content
+        assert model_event_values(eval_log) == expected_events
+        # the caller's log is left as it was
+        assert eval_log.samples[0].attachments == attachments_before
