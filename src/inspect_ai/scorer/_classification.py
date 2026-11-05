@@ -162,17 +162,31 @@ def _normalize_number(text: str) -> str:
 def _tokenize(text: str) -> List[str]:
     # split on spaces and hyphens, except a minus sign that opens a number
     # ("-5", "(-5)", "((-5))"); a minus after a word and any run of opening
-    # brackets ("f(-1)", "f([-1])") still splits, as before
+    # brackets ("f(-1)", "f([-1])") still splits, as before; the sign of an
+    # exponent ("1e-3") also stays in its number
     tokens = []
     start = 0
     for match in re.finditer(r"[ -]", text):
         index = match.start()
-        if text[index] == "-" and _is_minus_sign(text, index):
+        if text[index] == "-" and (
+            _is_minus_sign(text, index)
+            or _is_exponent_sign(text[start:index], text, index)
+        ):
             continue
         tokens.append(text[start:index])
         start = index + 1
     tokens.append(text[start:])
     return tokens
+
+
+_MANTISSA_WITH_EXPONENT_MARKER = re.compile(r"-?(\d+\.?\d*|\.\d+)[eE]")
+
+
+def _is_exponent_sign(token: str, text: str, index: int) -> bool:
+    return bool(
+        re.match(r"-\d", text[index:])
+        and _MANTISSA_WITH_EXPONENT_MARKER.fullmatch(token.lstrip("([{"))
+    )
 
 
 def _is_minus_sign(text: str, index: int) -> bool:

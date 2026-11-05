@@ -257,3 +257,27 @@ def test_minus_after_a_word_and_nested_brackets_splits_as_before():
     assert max_exact_score("((-40))", ["-40"]) == 1.0
     assert max_exact_score("((-40))", ["40"]) == 0.0
     assert max_exact_score("x is ([-40])", ["x is -40"]) == 1.0
+
+
+def test_exponent_sign_stays_in_the_number():
+    assert max_exact_score("1e3", ["1000"]) == 1.0
+    assert max_exact_score("1e-3", ["0.001"]) == 1.0
+    assert max_exact_score("1E-3", ["0.001"]) == 1.0
+    assert max_exact_score("(2.5e-4)", ["0.00025"]) == 1.0
+    assert max_exact_score("x is -1e-3", ["x is -0.001"]) == 1.0
+    assert max_exact_score("-1e-3", ["1e-3"]) == 0.0
+    assert max_f1_score("-1e-3", ["1e-3"]) == 0.0
+    assert max_f1_score("x is 1e-3", ["x is 0.001"]) == 1.0
+    # a hyphen after a word ending in "e", or after a bare "e", still splits
+    assert max_exact_score("e-5", ["e 5"]) == 1.0
+    assert max_exact_score("type-3", ["type 3"]) == 1.0
+
+
+@pytest.mark.anyio
+async def test_exact_scores_negative_exponents():
+    for answer, target, expected in [
+        ("1e-3", "0.001", CORRECT),
+        ("-1e-3", "1e-3", INCORRECT),
+    ]:
+        state = simple_task_state(model_output=answer)
+        assert (await exact()(state, Target([target]))).value == expected
