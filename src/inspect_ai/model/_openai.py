@@ -1182,53 +1182,43 @@ def parse_reasoning_content(
     return None
 
 
+def model_usage_from_openai_usage(usage: CompletionUsage | None) -> ModelUsage | None:
+    """Convert the usage block of a chat or legacy completions response.
+
+    Both endpoints report the same `CompletionUsage`. Cache reads and writes are
+    reported separately, so `input_tokens` counts only the uncached input.
+    """
+    if usage is None:
+        return None
+    prompt_details = usage.prompt_tokens_details
+    cached_tokens = prompt_details.cached_tokens if prompt_details is not None else None
+    cache_write_tokens = (
+        prompt_details.cache_write_tokens if prompt_details is not None else None
+    )
+    return ModelUsage(
+        input_tokens=usage.prompt_tokens
+        - (cached_tokens or 0)
+        - (cache_write_tokens or 0),
+        output_tokens=usage.completion_tokens,
+        input_tokens_cache_read=cached_tokens,
+        input_tokens_cache_write=cache_write_tokens,
+        reasoning_tokens=(
+            usage.completion_tokens_details.reasoning_tokens
+            if usage.completion_tokens_details is not None
+            else None
+        ),
+        total_tokens=usage.total_tokens,
+    )
+
+
 def model_output_from_openai(
     completion: ChatCompletion,
     choices: list[ChatCompletionChoice],
 ) -> ModelOutput:
-    cached_tokens = (
-        completion.usage.prompt_tokens_details.cached_tokens
-        if completion.usage
-        and completion.usage.prompt_tokens_details is not None
-        and completion.usage.prompt_tokens_details.cached_tokens is not None
-        else 0
-    )
-    cache_write_tokens = (
-        completion.usage.prompt_tokens_details.cache_write_tokens
-        if completion.usage
-        and completion.usage.prompt_tokens_details is not None
-        and completion.usage.prompt_tokens_details.cache_write_tokens is not None
-        else 0
-    )
     return ModelOutput(
         model=completion.model,
         choices=choices,
-        usage=(
-            ModelUsage(
-                input_tokens=(
-                    completion.usage.prompt_tokens - cached_tokens - cache_write_tokens
-                ),
-                output_tokens=completion.usage.completion_tokens,
-                input_tokens_cache_read=(
-                    completion.usage.prompt_tokens_details.cached_tokens
-                    if completion.usage.prompt_tokens_details is not None
-                    else None
-                ),
-                input_tokens_cache_write=(
-                    completion.usage.prompt_tokens_details.cache_write_tokens
-                    if completion.usage.prompt_tokens_details is not None
-                    else None
-                ),
-                reasoning_tokens=(
-                    completion.usage.completion_tokens_details.reasoning_tokens
-                    if completion.usage.completion_tokens_details is not None
-                    else None
-                ),
-                total_tokens=completion.usage.total_tokens,
-            )
-            if completion.usage
-            else None
-        ),
+        usage=model_usage_from_openai_usage(completion.usage),
         response_id=completion.id,
     )
 

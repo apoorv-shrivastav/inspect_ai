@@ -5,6 +5,8 @@ point the provider at a real ``/v1/completions`` server (vLLM-backed, so
 they require a GPU like the vllm-completions tests).
 """
 
+from typing import Any
+
 import pytest
 from test_helpers.utils import skip_if_github_action, skip_if_no_vllm
 
@@ -128,6 +130,101 @@ async def test_request_and_response_ids_recorded() -> None:
     assert event.request_ids == [
         ModelRequestId(id="req_completions", header="x-request-id", status=200)
     ]
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [
+        (
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+                "prompt_tokens_details": {"cached_tokens": 60},
+                "completion_tokens_details": {"reasoning_tokens": 20},
+            },
+            # cached tokens are reported separately, not as uncached input
+            {"input_tokens": 40, "input_tokens_cache_read": 60, "reasoning_tokens": 20},
+        ),
+        (
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+                "prompt_tokens_details": None,
+                "completion_tokens_details": None,
+            },
+            {
+                "input_tokens": 100,
+                "input_tokens_cache_read": None,
+                "reasoning_tokens": None,
+            },
+        ),
+        (
+            {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+            {
+                "input_tokens": 100,
+                "input_tokens_cache_read": None,
+                "reasoning_tokens": None,
+            },
+        ),
+    ],
+    ids=["with-details", "null-details", "no-details"],
+)
+async def test_usage_keeps_cached_and_reasoning_tokens(
+    usage: dict[str, Any], expected: dict[str, Any]
+) -> None:
+    """The /v1/completions path reads usage details like the chat path (#6480)."""
+    import httpx2
+    from openai import DefaultAsyncHttpxClient
+    from openai.types.chat import ChatCompletion
+    from openai.types.completion_usage import CompletionUsage
+
+    from inspect_ai.model._openai import model_output_from_openai
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            json={
+                "id": "cmpl-usage",
+                "object": "text_completion",
+                "created": 0,
+                "model": "some-model",
+                "choices": [{"index": 0, "text": "hi", "finish_reason": "stop"}],
+                "usage": usage,
+            },
+            request=request,
+        )
+
+    model = get_model(
+        "openai-api-completions/mysvc/some-model",
+        api_key="test-key",
+        base_url="http://test/v1",
+        http_client=DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler)),
+        memoize=False,
+    )
+    response = await model.generate(input=[ChatMessageUser(content="hello")])
+
+    assert response.usage is not None
+    assert response.usage.input_tokens == expected["input_tokens"]
+    assert response.usage.input_tokens_cache_read == expected["input_tokens_cache_read"]
+    assert response.usage.reasoning_tokens == expected["reasoning_tokens"]
+    assert response.usage.output_tokens == 50
+    assert response.usage.total_tokens == 150
+
+    # The chat-completions path reports the same usage for the same wire block.
+    chat_output = model_output_from_openai(
+        ChatCompletion(
+            id="chatcmpl-usage",
+            object="chat.completion",
+            created=0,
+            model="some-model",
+            choices=[],
+            usage=CompletionUsage.model_validate(usage),
+        ),
+        choices=[],
+    )
+    assert chat_output.usage == response.usage
 
 
 def test_missing_service_prefix_raises() -> None:

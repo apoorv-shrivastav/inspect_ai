@@ -27,10 +27,10 @@ from inspect_ai.model._model_call import ModelCall, as_error_response
 from inspect_ai.model._model_output import (
     ChatCompletionChoice,
     ModelOutput,
-    ModelUsage,
     as_stop_reason,
 )
 from inspect_ai.model._openai import (
+    model_usage_from_openai_usage,
     parse_completion_logprobs,
     parse_vllm_prompt_logprobs_raw,
 )
@@ -193,15 +193,7 @@ async def generate_raw_completions(
             parse_choice(c)
             for c in sorted(response.choices, key=lambda c: c.index or 0)
         ],
-        usage=(
-            ModelUsage(
-                input_tokens=response.usage.prompt_tokens,
-                output_tokens=response.usage.completion_tokens,
-                total_tokens=response.usage.total_tokens,
-            )
-            if response.usage
-            else None
-        ),
+        usage=model_usage_from_openai_usage(response.usage),
         response_id=response.id,
     )
 
