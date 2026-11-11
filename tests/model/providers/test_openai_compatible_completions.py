@@ -151,6 +151,23 @@ async def test_request_and_response_ids_recorded() -> None:
                 "prompt_tokens": 100,
                 "completion_tokens": 50,
                 "total_tokens": 150,
+                "prompt_tokens_details": {
+                    "cached_tokens": 60,
+                    "cache_write_tokens": 10,
+                },
+            },
+            {
+                "input_tokens": 30,
+                "input_tokens_cache_read": 60,
+                "input_tokens_cache_write": 10,
+                "reasoning_tokens": None,
+            },
+        ),
+        (
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
                 "prompt_tokens_details": None,
                 "completion_tokens_details": None,
             },
@@ -169,7 +186,7 @@ async def test_request_and_response_ids_recorded() -> None:
             },
         ),
     ],
-    ids=["with-details", "null-details", "no-details"],
+    ids=["with-details", "with-cache-write", "null-details", "no-details"],
 )
 async def test_usage_keeps_cached_and_reasoning_tokens(
     usage: dict[str, Any], expected: dict[str, Any]
@@ -209,6 +226,9 @@ async def test_usage_keeps_cached_and_reasoning_tokens(
     assert response.usage.input_tokens == expected["input_tokens"]
     assert response.usage.input_tokens_cache_read == expected["input_tokens_cache_read"]
     assert response.usage.reasoning_tokens == expected["reasoning_tokens"]
+    assert response.usage.input_tokens_cache_write == expected.get(
+        "input_tokens_cache_write"
+    )
     assert response.usage.output_tokens == 50
     assert response.usage.total_tokens == 150
 
@@ -225,6 +245,55 @@ async def test_usage_keeps_cached_and_reasoning_tokens(
         choices=[],
     )
     assert chat_output.usage == response.usage
+
+
+async def test_usage_kept_when_no_choices_returned() -> None:
+    """A response with no choices still reports its usage, as the chat path does."""
+    import httpx2
+    from openai import DefaultAsyncHttpxClient
+
+    from inspect_ai.model import ModelOutput
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            json={
+                "id": "cmpl-empty",
+                "object": "text_completion",
+                "created": 0,
+                "model": "some-model",
+                "choices": [],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 0,
+                    "total_tokens": 100,
+                    "prompt_tokens_details": {"cached_tokens": 60},
+                },
+            },
+            request=request,
+        )
+
+    model = get_model(
+        "openai-api-completions/mysvc/some-model",
+        api_key="test-key",
+        base_url="http://test/v1",
+        http_client=DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler)),
+        memoize=False,
+    )
+    result = await model.api.generate(
+        input=[ChatMessageUser(content="hello")],
+        tools=[],
+        tool_choice="auto",
+        config=GenerateConfig(max_tokens=1),
+    )
+
+    assert isinstance(result, tuple)
+    output, _ = result
+    assert isinstance(output, ModelOutput)
+    assert output.choices == []
+    assert output.usage is not None
+    assert output.usage.input_tokens == 40
+    assert output.usage.input_tokens_cache_read == 60
 
 
 def test_missing_service_prefix_raises() -> None:

@@ -167,7 +167,10 @@ async def generate_raw_completions(
     # Parse response
     if not response.choices:
         return ModelOutput(
-            model=response.model, choices=[], response_id=response.id
+            model=response.model,
+            choices=[],
+            usage=model_usage_from_openai_usage(response.usage),
+            response_id=response.id,
         ), model_call
 
     def parse_choice(choice: CompletionChoice) -> ChatCompletionChoice:
